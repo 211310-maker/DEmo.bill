@@ -4,6 +4,7 @@
   "description": "backend built with Node.js, MongoDb",
   "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "prod:server": "cross-env NODE_ENV=production node server.js",
     "dev:server": "cross-env NODE_ENV=dev nodemon server.js",
     "client:local": "npm run local --prefix frontend",
@@ -13,7 +14,7 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run client\""
   },
   "engines": {
-    "node": ">=10.16.2"
+    "node": "18.x"
   },
   "keywords": [],
   "author": "",
@@ -34,7 +35,7 @@
     "jsonwebtoken": "8.5.1",
     "lodash": "^4.17.20",
     "moment": "^2.29.1",
-    "mongoose": "^6.0.12",
+    "mongoose": "^7.0.0",
     "mongoose-unique-validator": "^2.0.3",
     "morgan": "1.10.0",
     "puppeteer": "^19.7.5",
