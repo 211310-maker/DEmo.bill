@@ -90,6 +90,18 @@ module.exports.receiptNoGenerator = (state) => {
     inititals = "JHT";
   } else if (state === "chhattisgarh") {
     inititals = "CGT";
+  } else if (state === "ts") {
+    inititals = "TS";
+  } else if (state === "as") {
+    inititals = "AS";
+  } else if (state === "py") {
+    inititals = "PY";
+  } else if (state === "dd") {
+    inititals = "DD";
+  } else if (state === "sk") {
+    inititals = "SK";
+  } else if (state === "tr") {
+    inititals = "TR";
   }
 
   return `${inititals}${Math.floor(

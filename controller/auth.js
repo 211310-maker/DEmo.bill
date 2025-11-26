@@ -25,6 +25,12 @@ const ALL_STATES = [
   "CHHATTISGARH",
   "ODISHA",
   "TAMILNADU",
+  "TELANGANA",
+  "ASSAM",
+  "PUDUCHERRY",
+  "DAMAN AND DIU",
+  "SIKKIM",
+  "TRIPURA",
 ];
 
 // =============================================
