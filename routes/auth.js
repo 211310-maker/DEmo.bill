@@ -15,10 +15,10 @@ const {
 
 const { protect, authorize } = require("../middleware/auth");
 
-//@desc    verify otp
-//@route   POST /auth/admin/verify-otp
-//@access  private
-router.post("/admin/verify-otp", protect, authorize("admin"), verifyOtp);
+//@desc    verify otp for temporary access link
+//@route   POST /auth/verify-otp
+//@access  public
+router.post("/verify-otp", verifyOtp);
 
 //@desc    webindex
 //@route   POST /auth/webindex
