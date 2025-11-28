@@ -55,24 +55,34 @@ module.exports.getPageAccessLink = asyncHandler(async (req, res, next) => {
 // =============================================
 module.exports.getAccess = asyncHandler(async (req, res, next) => {
   const { token } = req.params;
-  const decoded = jwt.verify(token, "page-access");
+  let decoded;
 
-  if (decoded.exp < (new Date().getTime() + 1) / 1000) {
-    return res.status(400).send({
-      success: false,
-      code: 400,
-      message: "link expired",
-    });
+  try {
+    decoded = jwt.verify(token, "page-access");
+
+    if (decoded.exp < (new Date().getTime() + 1) / 1000) {
+      return res.status(400).send({
+        success: false,
+        code: 400,
+        message: "link expired",
+      });
+    }
+  } catch (error) {
+    return next(new ErrorResponse("Invalid or expired link", 400, false));
   }
 
   let user = await TempUser.findById(decoded.id);
+  if (!user) {
+    return next(new ErrorResponse("Invalid link", 400, false));
+  }
   let otp = randomNumber(6);
   user.otp = otp;
   await user.save();
 
   const pageAccessToken = jwt.sign(
     { id: decoded.id },
-    "valid-page-access-token"
+    "valid-page-access-token",
+    { expiresIn: "15m" }
   );
 
   res.status(200).send({
@@ -80,6 +90,7 @@ module.exports.getAccess = asyncHandler(async (req, res, next) => {
     code: 200,
     pageAccessToken,
     otp,
+    tempUserId: user._id,
   });
 });
 
@@ -87,7 +98,29 @@ module.exports.getAccess = asyncHandler(async (req, res, next) => {
 // VERIFY OTP
 // =============================================
 module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
-  const { otp, password, username, tempUserId, accessState } = req.body;
+  const {
+    otp,
+    password,
+    username,
+    tempUserId,
+    accessState,
+    pageAccessToken,
+  } = req.body;
+
+  if (!pageAccessToken) {
+    return next(new ErrorResponse("Page access token required", 400, false));
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(pageAccessToken, "valid-page-access-token");
+  } catch (error) {
+    return next(new ErrorResponse("Invalid or expired link", 400, false));
+  }
+
+  if (decoded.id !== tempUserId) {
+    return next(new ErrorResponse("Invalid link", 400, false));
+  }
 
   const tempUser = await TempUser.findOne({ _id: tempUserId, otp });
   if (!tempUser) {
@@ -109,7 +142,9 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
     password,
   });
 
+  const token = user.generateAuthToken();
   await user.save();
+  user.token = token;
   await TempUser.findByIdAndDelete(tempUserId);
 
   logger.info(`new user is created with id ${user._id}`);
@@ -118,7 +153,17 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
     success: true,
     status: 201,
     message: "User created successfully!",
-    user: _.pick(user, ["username", "role", "__v"]),
+    user: _.pick(user, [
+      "_id",
+      "username",
+      "role",
+      "isBlocked",
+      "accessState",
+      "createdAt",
+      "updatedAt",
+      "token",
+      "__v",
+    ]),
   });
 });
 
