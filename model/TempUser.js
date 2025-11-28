@@ -31,6 +31,14 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    otpExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    otpUsed: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

@@ -5,6 +5,7 @@ const {
   loginUser,
   verifyOtp,
   getAccess,
+  createUserWithOtp,
   blockUnblockUser,
   registerUserWithEmailPassword,
   getAllUsers,
@@ -47,6 +48,16 @@ router.post(
   protect,
   authorize("admin"),
   addMoreStateToAccess
+);
+
+//@desc    create user with admin otp flow
+//@route   POST /auth/admin/create-user
+//@access  Private - admin
+router.post(
+  "/admin/create-user",
+  protect,
+  authorize("admin"),
+  createUserWithOtp
 );
 
 //@desc    register user with email & password

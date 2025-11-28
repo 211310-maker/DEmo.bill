@@ -77,6 +77,8 @@ module.exports.getAccess = asyncHandler(async (req, res, next) => {
   }
   let otp = randomNumber(6);
   user.otp = otp;
+  user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  user.otpUsed = false;
   await user.save();
 
   const pageAccessToken = jwt.sign(
@@ -91,6 +93,72 @@ module.exports.getAccess = asyncHandler(async (req, res, next) => {
     pageAccessToken,
     otp,
     tempUserId: user._id,
+    message: "Share this OTP with admin to complete user creation.",
+  });
+});
+
+// =============================================
+// CREATE USER WITH OTP (ADMIN)
+// =============================================
+module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
+  const { otp, username, password, accessState, role } = req.body;
+
+  if (!otp) {
+    return next(new ErrorResponse("OTP is required", 400, false));
+  }
+
+  if (!username || !password) {
+    return next(new ErrorResponse("Username and password are required", 400, false));
+  }
+
+  const tempUser = await TempUser.findOne({ otp, otpUsed: false });
+  if (!tempUser) {
+    return next(new ErrorResponse("Invalid or expired OTP", 400, false));
+  }
+
+  if (tempUser.otpExpiresAt && tempUser.otpExpiresAt < new Date()) {
+    return next(new ErrorResponse("Invalid or expired OTP", 400, false));
+  }
+
+  let existingUser = await User.findOne({ username });
+  if (existingUser) {
+    return next(new ErrorResponse("Username already exists", 400, false));
+  }
+
+  let user = new User({
+    username,
+    password,
+    accessState,
+    role: role || "member",
+    isBlocked: false,
+    completed: true,
+  });
+
+  const token = user.generateAuthToken();
+  await user.save();
+  user.token = token;
+
+  tempUser.otpUsed = true;
+  await tempUser.save();
+  await TempUser.findByIdAndDelete(tempUser._id);
+
+  logger.info(`new user is created with id ${user._id} using OTP`);
+
+  res.status(201).send({
+    success: true,
+    status: 201,
+    message: "User created successfully!",
+    user: _.pick(user, [
+      "_id",
+      "username",
+      "role",
+      "isBlocked",
+      "accessState",
+      "createdAt",
+      "updatedAt",
+      "token",
+      "__v",
+    ]),
   });
 });
 
