@@ -98,51 +98,34 @@ module.exports.getAccess = asyncHandler(async (req, res, next) => {
 });
 
 // =============================================
-// CREATE USER WITH OTP (ADMIN)
+// ADMIN CREATE USER
 // =============================================
 module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
-  const { otp, username, password, accessState, role } = req.body;
-
-  if (!otp) {
-    return next(new ErrorResponse("OTP is required", 400, false));
-  }
+  const { username, password, accessState, role } = req.body;
 
   if (!username || !password) {
     return next(new ErrorResponse("Username and password are required", 400, false));
   }
 
-  const tempUser = await TempUser.findOne({ otp, otpUsed: false });
-  if (!tempUser) {
-    return next(new ErrorResponse("Invalid or expired OTP", 400, false));
-  }
-
-  if (tempUser.otpExpiresAt && tempUser.otpExpiresAt < new Date()) {
-    return next(new ErrorResponse("Invalid or expired OTP", 400, false));
-  }
-
-  let existingUser = await User.findOne({ username });
+  const existingUser = await User.findOne({ username });
   if (existingUser) {
     return next(new ErrorResponse("Username already exists", 400, false));
   }
 
-  let user = new User({
+  const user = new User({
     username,
     password,
     accessState,
     role: role || "member",
     isBlocked: false,
     completed: true,
+    createdBy: req.user?._id,
   });
 
-  const token = user.generateAuthToken();
   await user.save();
-  user.token = token;
+  const token = user.generateAuthToken();
 
-  tempUser.otpUsed = true;
-  await tempUser.save();
-  await TempUser.findByIdAndDelete(tempUser._id);
-
-  logger.info(`new user is created with id ${user._id} using OTP`);
+  logger.info(`new user is created with id ${user._id} by admin ${req.user?._id}`);
 
   res.status(201).send({
     success: true,
@@ -156,9 +139,8 @@ module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
       "accessState",
       "createdAt",
       "updatedAt",
-      "token",
-      "__v",
     ]),
+    token,
   });
 });
 
@@ -301,104 +283,71 @@ module.exports.getAllUsers = asyncHandler(async (req, res, next) => {
 // =============================================
 module.exports.registerUserWithEmailPassword = asyncHandler(
   async (req, res, next) => {
-    const { username, password } = req.body;
-
-    const isUserNameExist = await User.find({ username });
-    if (isUserNameExist.length > 0) {
-      return next(new ErrorResponse("Username already exist", 400));
-    }
-
-    if (!username) {
-      return next(new ErrorResponse("Please add username", 400));
-    }
-
-    let user = new User({
-      isBlocked: true,
-      username,
-      password,
-    });
-
-    const token = user.generateAuthToken();
-    await user.save();
-    user.token = token;
-
-    logger.info(`user registered with direct email & password`);
-
-    res.status(200).send({
-      success: true,
-      code: 200,
-      user: _.pick(user, [
-        "username",
-        "role",
-        "isBlocked",
-        "createdAt",
-        "updatedAt",
-        "token",
-        "__v",
-      ]),
-    });
+    return next(
+      new ErrorResponse("Public registration is disabled. Ask an admin to add you.", 403)
+    );
   }
 );
 
 // =============================================
-// LOGIN USER (FIXED)
+// LOGIN USER (PRODUCTION STYLE)
 // =============================================
 module.exports.loginUser = asyncHandler(async (req, res, next) => {
   const { username, password } = req.body;
 
-  console.log("LOGIN REQUEST BODY:", req.body);
-
-  // 1. Check required fields
   if (!username || !password) {
     return next(new ErrorResponse("Username & password required", 400));
   }
 
-  // 2. Find user by username only
-  let user = await User.findOne({ username });
+  const user = await User.findOne({ username });
 
   if (!user) {
-    return next(new ErrorResponse("Invalid Credentials", 400));
+    return next(new ErrorResponse("Invalid credentials", 400));
   }
 
-  // 3. Compare password (plain text — same as your system)
-  if (user.password !== password) {
-    return next(new ErrorResponse("Invalid Credentials", 400));
+  let isMatch = false;
+  let needsPasswordUpgrade = false;
+  try {
+    isMatch = await user.matchPassword(password);
+  } catch (error) {
+    isMatch = false;
   }
 
-  // 4. Check block
+  if (!isMatch && user.password === password) {
+    isMatch = true;
+    needsPasswordUpgrade = true;
+  }
+
+  if (!isMatch) {
+    return next(new ErrorResponse("Invalid credentials", 400));
+  }
+
   if (user.isBlocked) {
     return next(new ErrorResponse("You are blocked", 400));
   }
-
-  // 5. Admin login route protection (referer may be undefined)
-  if (req.headers.referer?.includes("/admin/login")) {
-    if (user.role !== "admin") {
-      return next(new ErrorResponse("Invalid Credentials", 400));
-    }
-  }
-
-  // 6. Create token
-  const token = user.generateAuthToken();
 
   if (user.role === "admin") {
     user.accessState = ALL_STATES;
   }
 
+  if (needsPasswordUpgrade) {
+    user.password = password;
+  }
+
+  const token = user.generateAuthToken();
   await user.save();
-  user.token = token;
 
   return res.status(200).json({
     success: true,
     code: 200,
+    token,
     user: _.pick(user, [
       "role",
       "_id",
       "username",
       "createdAt",
       "updatedAt",
-      "token",
       "accessState",
-      "__v",
     ]),
   });
 });
