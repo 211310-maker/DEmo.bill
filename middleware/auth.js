@@ -1,31 +1,35 @@
-const jwt = require('jsonwebtoken');
-const asyncHandler = require('./asyncHandler');
-const User = require('../model/User');
-const ErrorResponse = require('../utils/errorResponse');
-const logger = require('../logger');
+const jwt = require("jsonwebtoken");
+const asyncHandler = require("./asyncHandler");
+const User = require("../model/User");
+const ErrorResponse = require("../utils/errorResponse");
+const logger = require("../logger");
 
 const protect = asyncHandler(async (req, res, next) => {
-  // check for token preset in header
-  const token = req.header('x-auth-token');
+  const token = req.header("x-auth-token");
+
   if (!token) {
-    return next(new ErrorResponse('Access Denied', 401, false, null));
+    return next(new ErrorResponse("Access Denied", 401, false, null));
   }
 
-  // check token validity
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    return next(new ErrorResponse("Invalid token", 401, false, null));
+  }
+
   if (decoded.exp < (new Date().getTime() + 1) / 1000) {
     return next(
-      new ErrorResponse('Session Expired, Please Login again', 401, false, null)
+      new ErrorResponse("Session Expired, Please Login again", 401, false, null)
     );
   }
 
-  // check if id in token exist
   const user = await User.findById(decoded._id);
   if (!user) {
     logger.info(`user is trying with invalid token ${token}`);
-    next(
+    return next(
       new ErrorResponse(
-        'invalid user id in token / Access Denied ',
+        "invalid user id in token / Access Denied ",
         401,
         false,
         null
@@ -33,11 +37,10 @@ const protect = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // check if user is not blocked
   if (user.isBlocked) {
-    next(
+    return next(
       new ErrorResponse(
-        'You are blocked, please contact admin',
+        "You are blocked, please contact admin",
         403,
         false,
         null
@@ -46,13 +49,13 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 
   req.user = user;
-  next();
+  return next();
 });
 
 const authorize = (...roles) => {
   return (req, _, next) => {
     if (!roles.includes(req.user.role)) {
-      next(
+      return next(
         new ErrorResponse(
           `role ${req.user.role} is not authorized to perform this operation`,
           403,
@@ -60,11 +63,17 @@ const authorize = (...roles) => {
         )
       );
     }
-    next();
+    return next();
   };
 };
 
-//protect routh
+const adminOnly = (req, res, next) => {
+  if (!req.user || req.user.role !== "admin") {
+    return next(new ErrorResponse("Admin access required", 403, false));
+  }
+  return next();
+};
+
 module.exports.protect = protect;
-//grant access to specific roles
 module.exports.authorize = authorize;
+module.exports.adminOnly = adminOnly;

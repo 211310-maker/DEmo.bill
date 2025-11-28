@@ -1,10 +1,8 @@
 const express = require("express");
 const router = express.Router();
+
 const {
-  getPageAccessLink,
   loginUser,
-  verifyOtp,
-  getAccess,
   createUserWithOtp,
   blockUnblockUser,
   registerUserWithEmailPassword,
@@ -14,61 +12,37 @@ const {
   webIndex,
 } = require("../controller/auth");
 
-const { protect, authorize } = require("../middleware/auth");
-
-//@desc    verify otp for temporary access link
-//@route   POST /auth/verify-otp
-//@access  public
-router.post("/verify-otp", verifyOtp);
+const { protect, adminOnly } = require("../middleware/auth");
 
 //@desc    webindex
 //@route   POST /auth/webindex
-//@access  public
-router.post("/webindex", webIndex);
+//@access  private
+router.post("/webindex", protect, webIndex);
 
-//@desc    get pages access link
-//@route   POST /auth/admin/page-access-link
+//@desc    get all members
+//@route   GET /auth/admin/get-users
 //@access  Private - admin
-router.get(
-  "/admin/page-access-link",
-  protect,
-  authorize("admin"),
-  getPageAccessLink
-);
-//@desc    get all memebers
-//@route   POST /auth/admin/get-users
-//@access  Private - admin
-router.get("/admin/get-users", protect, authorize("admin"), getAllUsers);
+router.get("/admin/get-users", protect, adminOnly, getAllUsers);
 
 //@desc    add more state to accessState
 //@route   POST /auth/admin/add-state-access
 //@access  Private - admin
-router.post(
-  "/admin/add-state-access",
-  protect,
-  authorize("admin"),
-  addMoreStateToAccess
-);
+router.post("/admin/add-state-access", protect, adminOnly, addMoreStateToAccess);
 
-//@desc    create user with admin otp flow
+//@desc    create user (admin only)
 //@route   POST /auth/admin/create-user
 //@access  Private - admin
-router.post(
-  "/admin/create-user",
-  protect,
-  authorize("admin"),
-  createUserWithOtp
-);
+router.post("/admin/create-user", protect, adminOnly, createUserWithOtp);
 
-//@desc    register user with email & password
+//@desc    registration disabled (kept for backwards compatibility)
 //@route   POST /auth/register-user-with-email-password
-//@access  Public
-router.post("/register-user-email-password", registerUserWithEmailPassword);
-
-//@desc    get access
-//@route   GET /auth/get-access/:token
-//@access  public
-router.get("/get-access/:token", getAccess);
+//@access  Private - admin (returns 403)
+router.post(
+  "/register-user-email-password",
+  protect,
+  adminOnly,
+  registerUserWithEmailPassword
+);
 
 //@desc    login user
 //@route   POST /auth/login
@@ -78,20 +52,11 @@ router.post("/login", loginUser);
 //@desc    block user
 //@route   POST /auth/admin/block-unblock-user
 //@access  private - admin
-router.post(
-  "/admin/block-unblock-user",
-  protect,
-  authorize("admin"),
-  blockUnblockUser
-);
+router.post("/admin/block-unblock-user", protect, adminOnly, blockUnblockUser);
+
 //@desc    delete user
 //@route   DELETE /auth/admin/delete-user/:id
 //@access  private - admin
-router.delete(
-  "/admin/delete-user/:userId",
-  protect,
-  authorize("admin"),
-  deleteUser
-);
+router.delete("/admin/delete-user/:userId", protect, adminOnly, deleteUser);
 
 module.exports = router;

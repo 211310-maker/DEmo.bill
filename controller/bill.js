@@ -14,6 +14,18 @@ const ejs = require("ejs");
 const path = require("path");
 const axios = require("axios");
 
+const assertBillAccess = (bill, user, next) => {
+  if (!bill) {
+    return next(new ErrorResponse("Bill not found", 404, false));
+  }
+
+  if (user.role !== "admin" && bill.createdBy.toString() !== user._id.toString()) {
+    return next(new ErrorResponse("Access denied", 403, false));
+  }
+
+  return true;
+};
+
 //@desc    get details
 //@route   get /bill/:state/get-details/:vehicleNo
 //@access  public
@@ -49,11 +61,9 @@ module.exports.getBillInPdfFormat = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   // // get the bill details
   const bill = await Bill.findById(id);
-  if (!bill) {
-    logger.info(`bill not found with this id ${id}`);
-    res.status(404);
-    return res.render("not-found");
-  }
+  const accessCheck = assertBillAccess(bill, req.user, next);
+  if (accessCheck !== true) return accessCheck;
+
   logger.info(`bill found with this id ${id}`);
   let qrCodeData = null;
   try {
@@ -125,7 +135,13 @@ module.exports.getBillInPdfFormat = asyncHandler(async (req, res, next) => {
 //@access  private
 //@query   ?from=&to=&createdBy=&
 module.exports.getAllBills = asyncHandler(async (req, res, next) => {
-  const bills = await Bill.find({ ...req.query }).sort({ createdAt: "-1" });
+  const filter = { ...req.query };
+
+  if (req.user.role !== "admin") {
+    filter.createdBy = req.user._id;
+  }
+
+  const bills = await Bill.find(filter).sort({ createdAt: "-1" });
   res
     .status(200)
     .send({ success: true, code: 200, bills, count: bills.length });
@@ -139,11 +155,8 @@ module.exports.getBillOnPageFormat = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   // // get the bill details
   const bill = await Bill.findById(id);
-  if (!bill) {
-    logger.info(`bill not found with this id ${id}`);
-    res.status(404);
-    return res.render("not-found");
-  }
+  const accessCheck = assertBillAccess(bill, req.user, next);
+  if (accessCheck !== true) return accessCheck;
   const data = {
     ...bill._doc,
     host: process.env.APP_BASE_URL,
@@ -229,26 +242,19 @@ const formatDateMsg = (date, state, type) => {
 //@route   POST /bill/post
 //@access  private
 module.exports.createBill = asyncHandler(async (req, res, next) => {
-  // get data from body
-  const { username, password } = req.body;
-  console.log(username, password);
-  console.log(process.env.PAYMENT_USERNAME);
-  if (
-    username !== process.env.PAYMENT_USERNAME &&
-    password !== process.env.PAYMENT_PASSWORD
-  ) {
+  const { vehicleNo, state, totalAmount } = req.body;
+
+  if (!vehicleNo || !state || !totalAmount) {
     return next(
-      new ErrorResponse("Invalid username & password", 400, false, null)
+      new ErrorResponse("vehicleNo, state and totalAmount are required", 400, false)
     );
   }
 
-  const bill = new Bill({ ...req.body });
-  bill.createdBy = req.user._id;
+  const bill = new Bill({ ...req.body, createdBy: req.user._id });
   bill.receiptNo = receiptNoGenerator(req.body.state);
-  let time = new Date(req.body.taxFromDate);
+  let time = new Date(req.body.taxFromDate || Date.now());
   time.setSeconds(new Date().getSeconds());
   bill.paymentDate = time;
-  // save to db
 
   await bill.save();
   var data = JSON.stringify({});
@@ -310,11 +316,8 @@ module.exports.verifyBill = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const bill = await Bill.findById(id);
 
-  if (!bill) {
-    return res
-      .status(404)
-      .send({ success: false, code: 404, message: "Bill not found" });
-  }
+  const accessCheck = assertBillAccess(bill, req.user, next);
+  if (accessCheck !== true) return accessCheck;
 
   res.status(200).send({ success: true, code: 200, bill });
 });
