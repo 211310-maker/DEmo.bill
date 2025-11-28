@@ -292,65 +292,60 @@ module.exports.registerUserWithEmailPassword = asyncHandler(
 // =============================================
 // LOGIN USER (PRODUCTION STYLE)
 // =============================================
-module.exports.loginUser = asyncHandler(async (req, res, next) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return next(new ErrorResponse("Username & password required", 400));
-  }
-
-  const user = await User.findOne({ username });
-
-  if (!user) {
-    return next(new ErrorResponse("Invalid credentials", 400));
-  }
-
-  let isMatch = false;
-  let needsPasswordUpgrade = false;
+module.exports.loginUser = async (req, res, next) => {
   try {
-    isMatch = await user.matchPassword(password);
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return next(new ErrorResponse("Username & password required", 400));
+    }
+
+    const user = await User.findOne({ username });
+
+    if (!user) {
+      return next(new ErrorResponse("Invalid credentials", 400));
+    }
+
+    if (user.isBlocked) {
+      return next(new ErrorResponse("You are blocked", 400));
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return next(new ErrorResponse("Invalid credentials", 400));
+    }
+
+    if (user.role === "admin") {
+      user.accessState = ALL_STATES;
+    }
+
+    const token = jwt.sign(
+      { _id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE }
+    );
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      token,
+      user: {
+        _id: user._id,
+        role: user.role,
+        name: user.username,
+        username: user.username,
+        email: user.username,
+        mobile: user.username,
+        allowedStates: user.accessState || [],
+      },
+    });
   } catch (error) {
-    isMatch = false;
+    console.error("Login error:", error);
+    return next(new ErrorResponse("Something went wrong", 500));
   }
-
-  if (!isMatch && user.password === password) {
-    isMatch = true;
-    needsPasswordUpgrade = true;
-  }
-
-  if (!isMatch) {
-    return next(new ErrorResponse("Invalid credentials", 400));
-  }
-
-  if (user.isBlocked) {
-    return next(new ErrorResponse("You are blocked", 400));
-  }
-
-  if (user.role === "admin") {
-    user.accessState = ALL_STATES;
-  }
-
-  if (needsPasswordUpgrade) {
-    user.password = password;
-  }
-
-  const token = user.generateAuthToken();
-  await user.save();
-
-  return res.status(200).json({
-    success: true,
-    code: 200,
-    token,
-    user: _.pick(user, [
-      "role",
-      "_id",
-      "username",
-      "createdAt",
-      "updatedAt",
-      "accessState",
-    ]),
-  });
-});
+};
 
 
 // =============================================
