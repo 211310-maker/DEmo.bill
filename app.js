@@ -44,8 +44,8 @@ app.set("view engine", "ejs");
 // =============================================
 
 const allowedOrigins = [
-  "http://localhost:3000",                  // React dev
-  "https://demo-bill-frontend.onrender.com" // Render frontend
+  "https://demo-bill-frontend.onrender.com", // Render frontend
+  "http://localhost:3000", // React dev
 ];
 
 // Manual CORS headers so we fully control the response
@@ -77,11 +77,7 @@ app.use((req, res, next) => {
 // Also keep cors() for safety
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // Postman/curl
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("Not allowed by CORS"));
-    },
+    origin: allowedOrigins,
     credentials: true,
   })
 );
