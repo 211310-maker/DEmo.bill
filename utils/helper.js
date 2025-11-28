@@ -1,4 +1,5 @@
 const axios = require("axios");
+const qrCode = require("qrcode");
 
 module.exports.inWords = (num) => {
   if (num === undefined || num === null) {
@@ -144,6 +145,24 @@ module.exports.formatDate = (date, showTime) => {
   } else {
     return `${a}`;
   }
+};
+
+module.exports.generateBillQr = async (bill) => {
+  const billDate = bill.paymentDate || bill.createdAt;
+
+  const payload = {
+    id: bill._id?.toString(),
+    vehicleNo: bill.vehicleNo,
+    state: bill.state,
+    totalAmount: bill.totalAmount,
+    billDate: module.exports.formatDate(billDate, true),
+  };
+
+  if (process.env.APP_BASE_URL && bill._id) {
+    payload.verifyUrl = `${process.env.APP_BASE_URL}/bill/verify/${bill._id}`;
+  }
+
+  return qrCode.toDataURL(JSON.stringify(payload));
 };
 
 function addZero(i) {

@@ -8,6 +8,7 @@ const {
   getAllBills,
   getBillInPdfFormat,
   getBillOnPageFormat,
+  verifyBill,
 } = require('../controller/bill');
 
 const { protect, authorize } = require('../middleware/auth');
@@ -26,6 +27,11 @@ router.get('/:id/pdf', getBillInPdfFormat);
 //@route   GET /bill/:id/page
 //@access  public
 router.get('/:id/page', getBillOnPageFormat);
+
+//@desc    verify bill
+//@route   GET /bill/verify/:id
+//@access  public
+router.get('/verify/:id', verifyBill);
 
 // get all with filter
 
