@@ -18,6 +18,7 @@ module.exports.appView = (req, res, next) => {
     '/app/bank',
     '/app/confirm-payment',
     '/app/select-payment',
+    '/app/reports',
      '/app/tg',  // Telangana
   '/app/as',  // Assam
   '/app/py',  // Puducherry / Pondicherry

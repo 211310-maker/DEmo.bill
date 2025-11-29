@@ -29,7 +29,7 @@ origin: [
 ],
 credentials: true,
 methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-allowedHeaders: ["Content-Type", "x-auth-token"]
+allowedHeaders: ["Content-Type", "x-auth-token", "authorization"]
 }));
 
 app.options("*", cors());

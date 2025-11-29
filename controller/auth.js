@@ -12,7 +12,7 @@ const { generateOtp, hashOtp, compareOtp } = require("../utils/otp");
 const { v4: uuidv4 } = require("uuid");
 const { sendSms } = require("../utils/sms");
 
-const ALL_STATES = [
+const BASE_STATE_LIST = [
   "BIHAR",
   "HARYANA",
   "PUNJAB",
@@ -28,13 +28,54 @@ const ALL_STATES = [
   "CHHATTISGARH",
   "ODISHA",
   "TAMILNADU",
+  // new states + backward compatible labels
   "TELANGANA",
   "ASSAM",
+  "PONDICHERRY",
   "PUDUCHERRY",
+  "DAMAN & DIU",
   "DAMAN AND DIU",
   "SIKKIM",
   "TRIPURA",
 ];
+
+const ALL_STATES = Array.from(new Set(BASE_STATE_LIST));
+
+const normalizeStates = (states) => {
+  if (!Array.isArray(states)) return [];
+  return Array.from(
+    new Set(
+      states
+        .filter(Boolean)
+        .map((state) => state.toString().trim().toUpperCase())
+    )
+  );
+};
+
+const getAccessBaseUrl = () => {
+  if (
+    process.env.NODE_ENV === "local" &&
+    process.env.NGROK_PUBLIC_URL &&
+    process.env.NGROK_PUBLIC_URL.trim() !== ""
+  ) {
+    return process.env.NGROK_PUBLIC_URL.replace(/\/$/, "");
+  }
+
+  if (process.env.APP_BASE_URL) {
+    return process.env.APP_BASE_URL.replace(/\/$/, "");
+  }
+
+  return "http://localhost:5000";
+};
+
+const buildAccessLink = (path) => `${getAccessBaseUrl()}${path}`;
+
+// =============================================
+// STATE LIST
+// =============================================
+module.exports.getStateList = asyncHandler(async (req, res) => {
+  res.status(200).send({ success: true, states: ALL_STATES });
+});
 
 // =============================================
 // GET PAGE ACCESS LINK
@@ -49,9 +90,7 @@ module.exports.getPageAccessLink = asyncHandler(async (req, res, next) => {
     createdBy: req.user?._id,
   });
 
-  const link = process.env.APP_BASE_URL
-    ? `${process.env.APP_BASE_URL}/app/register/${token}/get-access`
-    : `/app/register/${token}/get-access`;
+  const link = buildAccessLink(`/app/register/${token}/get-access`);
 
   res.status(200).send({
     success: true,
@@ -106,10 +145,10 @@ module.exports.getAccess = asyncHandler(async (req, res, next) => {
 // ADMIN CREATE USER
 // =============================================
 module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
-  const { username, password, accessState, role } = req.body;
+  const { username, password, accessState, role, name, mobileNo, email } = req.body;
 
-  if (!username || !password) {
-    return next(new ErrorResponse("Username and password are required", 400, false));
+  if (!username) {
+    return next(new ErrorResponse("Username is required", 400, false));
   }
 
   const existingUser = await User.findOne({ username });
@@ -117,26 +156,54 @@ module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Username already exists", 400, false));
   }
 
+  const normalizedAccessState = normalizeStates(accessState);
+  const normalizedRole = role === "admin" ? "admin" : role || "member";
+  const finalAccessState =
+    normalizedRole === "admin" ? ALL_STATES : normalizedAccessState;
+  const tempPassword = password || uuidv4();
+
   const user = new User({
     username,
-    password,
-    accessState,
-    role: role || "member",
+    name,
+    mobileNo,
+    email,
+    password: tempPassword,
+    accessState: finalAccessState,
+    role: normalizedRole,
     isBlocked: false,
     completed: true,
     createdBy: req.user?._id,
   });
 
   await user.save();
-  const token = user.generateAuthToken();
+
+  const token = uuidv4();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await TempAccess.create({
+    token,
+    expiresAt,
+    createdBy: req.user?._id,
+    mobileNo,
+    email,
+    meta: {
+      userId: user._id.toString(),
+      username,
+      accessState: finalAccessState,
+      role: normalizedRole,
+      name,
+      mobileNo,
+      email,
+    },
+  });
+
+  const accessLink = buildAccessLink(`/auth/get-access/${token}`);
 
   logger.info(`new user is created with id ${user._id} by admin ${req.user?._id}`);
 
-  res.status(201).send({
-    success: true,
-    status: 201,
-    message: "User created successfully!",
-    user: _.pick(user, [
+  const allowedStates = user.accessState || [];
+  const userPayload = {
+    ..._.pick(user, [
       "_id",
       "username",
       "role",
@@ -145,7 +212,17 @@ module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
       "createdAt",
       "updatedAt",
     ]),
-    token,
+    allowedStates,
+    stateAccess: allowedStates,
+  };
+
+  res.status(201).send({
+    success: true,
+    status: 201,
+    message: "User created successfully!",
+    accessLink,
+    expiresAt,
+    user: userPayload,
   });
 });
 
@@ -179,11 +256,65 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Invalid OTP", 400, false));
   }
 
-  const normalizedRole = role === "admin" ? "admin" : role || "user";
-  const finalMobileNo = mobileNo || tempAccess.mobileNo;
-  const finalEmail = email || tempAccess.email;
-  const username = finalMobileNo || finalEmail || name || token;
-  accessState = Array.isArray(accessState) ? accessState : [];
+  const normalizedRole =
+    role === "admin" ? "admin" : role || tempAccess.meta?.role || "user";
+  const finalMobileNo = mobileNo || tempAccess.mobileNo || tempAccess.meta?.mobileNo;
+  const finalEmail = email || tempAccess.email || tempAccess.meta?.email;
+  const normalizedAccessState = normalizeStates(
+    Array.isArray(accessState)
+      ? accessState
+      : tempAccess.meta?.accessState || tempAccess.accessState || []
+  );
+  const finalAccessState =
+    normalizedRole === "admin" ? ALL_STATES : normalizedAccessState;
+  const username =
+    tempAccess.meta?.username || finalMobileNo || finalEmail || name || token;
+
+  if (tempAccess.meta?.userId) {
+    const existingUser = await User.findById(tempAccess.meta.userId);
+
+    if (!existingUser) {
+      return next(new ErrorResponse("Invalid user for this link", 400, false));
+    }
+
+    existingUser.password = password;
+    existingUser.role = normalizedRole;
+    existingUser.accessState = finalAccessState;
+    existingUser.name = name || existingUser.name;
+    existingUser.mobileNo = finalMobileNo || existingUser.mobileNo;
+    existingUser.email = finalEmail || existingUser.email;
+    existingUser.completed = true;
+    await existingUser.save();
+
+    tempAccess.used = true;
+    await tempAccess.save();
+
+    const authToken = jwt.sign(
+      { _id: existingUser._id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE }
+    );
+
+    const existingUserPayload = {
+      ..._.pick(existingUser, [
+        "_id",
+        "username",
+        "role",
+        "accessState",
+        "name",
+        "mobileNo",
+        "email",
+      ]),
+      allowedStates: existingUser.accessState || [],
+      stateAccess: existingUser.accessState || [],
+    };
+
+    return res.status(200).send({
+      success: true,
+      user: existingUserPayload,
+      token: authToken,
+    });
+  }
 
   const user = new User({
     username,
@@ -192,7 +323,7 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
     email: finalEmail,
     password,
     role: normalizedRole,
-    accessState,
+    accessState: finalAccessState,
     isBlocked: false,
     completed: true,
     createdBy: tempAccess.createdBy,
@@ -209,9 +340,8 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
     { expiresIn: process.env.JWT_EXPIRE }
   );
 
-  res.status(200).send({
-    success: true,
-    user: _.pick(user, [
+  const userPayload = {
+    ..._.pick(user, [
       "_id",
       "username",
       "role",
@@ -220,6 +350,13 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
       "mobileNo",
       "email",
     ]),
+    allowedStates: user.accessState || [],
+    stateAccess: user.accessState || [],
+  };
+
+  res.status(200).send({
+    success: true,
+    user: userPayload,
     token: authToken,
   });
 });
@@ -230,15 +367,15 @@ module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
 module.exports.addMoreStateToAccess = asyncHandler(async (req, res, next) => {
   const { accessState, id } = req.body;
 
-  const user = await User.findByIdAndUpdate(
-    id,
-    { accessState },
-    { runValidators: true }
-  );
+  const user = await User.findById(id);
 
   if (!user) {
     return next(new ErrorResponse("User not found with this id", 404, false));
   }
+
+  const normalizedStates = normalizeStates(accessState);
+  user.accessState = user.role === "admin" ? ALL_STATES : normalizedStates;
+  await user.save();
 
   res.status(200).send({
     success: true,
@@ -325,6 +462,8 @@ module.exports.loginUser = async (req, res, next) => {
 
     if (user.role === "admin") {
       user.accessState = ALL_STATES;
+    } else {
+      user.accessState = normalizeStates(user.accessState);
     }
 
     const token = jwt.sign(
@@ -334,6 +473,8 @@ module.exports.loginUser = async (req, res, next) => {
     );
 
     await user.save();
+
+    const allowedStates = user.accessState || [];
 
     return res.status(200).json({
       success: true,
@@ -345,7 +486,9 @@ module.exports.loginUser = async (req, res, next) => {
         username: user.username,
         email: user.username,
         mobile: user.username,
-        allowedStates: user.accessState || [],
+        allowedStates,
+        stateAccess: allowedStates,
+        accessState: allowedStates,
       },
     });
   } catch (error) {
@@ -395,6 +538,8 @@ module.exports.webIndex = asyncHandler(async (req, res, next) => {
 
   if (user.role === "admin") {
     user.accessState = ALL_STATES;
+  } else {
+    user.accessState = normalizeStates(user.accessState);
   }
 
   await user.save();

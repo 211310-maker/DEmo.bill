@@ -4,7 +4,7 @@ const User = require("../model/User");
 const ErrorResponse = require("../utils/errorResponse");
 const logger = require("../logger");
 
-const protect = asyncHandler(async (req, res, next) => {
+const extractToken = (req) => {
   let token =
     req.header("x-auth-token") ||
     req.body?.authToken ||
@@ -13,10 +13,23 @@ const protect = asyncHandler(async (req, res, next) => {
 
   if (!token && req.headers.authorization) {
     const [scheme, value] = req.headers.authorization.split(" ");
-    if (scheme === "Bearer" && value) {
+    if (/^Bearer$/i.test(scheme) && value) {
       token = value;
     }
   }
+
+  if (typeof token === "string") {
+    token = token.replace(/^Bearer\s+/i, "").trim();
+    if (token === "null" || token === "undefined" || token === "") {
+      token = null;
+    }
+  }
+
+  return token;
+};
+
+const protect = asyncHandler(async (req, res, next) => {
+  const token = extractToken(req);
 
   if (!token) {
     if (process.env.NODE_ENV !== "production") {
@@ -41,6 +54,10 @@ const protect = asyncHandler(async (req, res, next) => {
       }
     }
     return next(new ErrorResponse("Invalid token", 401, false, null));
+  }
+
+  if (!decoded?._id) {
+    return next(new ErrorResponse("Invalid token payload", 401, false, null));
   }
 
   if (decoded.exp < (new Date().getTime() + 1) / 1000) {
