@@ -37,7 +37,7 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
 
-UserSchema.virtual('createdBy', {
+UserSchema.virtual('createdByUser', {
   ref: 'Bill',
   localField: '_id',
   foreignField: 'createdBy',
