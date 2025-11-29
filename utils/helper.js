@@ -159,7 +159,7 @@ module.exports.generateBillQr = async (bill) => {
   };
 
   if (process.env.APP_BASE_URL && bill._id) {
-    payload.verifyUrl = `${process.env.APP_BASE_URL}/bill/verify/${bill._id}`;
+    payload.verifyUrl = `${process.env.APP_BASE_URL}/bill/${bill._id}/page`;
   }
 
   return qrCode.toDataURL(JSON.stringify(payload));

@@ -10,6 +10,9 @@ const {
   deleteUser,
   addMoreStateToAccess,
   webIndex,
+  getPageAccessLink,
+  getAccess,
+  verifyOtp,
 } = require("../controller/auth");
 
 const { protect, adminOnly } = require("../middleware/auth");
@@ -23,6 +26,21 @@ router.post("/webindex", protect, webIndex);
 //@route   GET /auth/admin/get-users
 //@access  Private - admin
 router.get("/admin/get-users", protect, adminOnly, getAllUsers);
+
+//@desc    generate page access link
+//@route   GET /auth/admin/page-access-link
+//@access  Private - admin
+router.get("/admin/page-access-link", protect, adminOnly, getPageAccessLink);
+
+//@desc    get access for registration
+//@route   GET /auth/get-access/:token
+//@access  Public
+router.get("/get-access/:token", getAccess);
+
+//@desc    verify otp and create user
+//@route   POST /auth/admin/verify-otp
+//@access  Public
+router.post("/admin/verify-otp", verifyOtp);
 
 //@desc    add more state to accessState
 //@route   POST /auth/admin/add-state-access

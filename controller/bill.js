@@ -19,7 +19,15 @@ const assertBillAccess = (bill, user, next) => {
     return next(new ErrorResponse("Bill not found", 404, false));
   }
 
-  if (user.role !== "admin" && bill.createdBy.toString() !== user._id.toString()) {
+  if (!user) {
+    return true;
+  }
+
+  if (
+    user.role !== "admin" &&
+    bill.createdBy &&
+    bill.createdBy.toString() !== user._id.toString()
+  ) {
     return next(new ErrorResponse("Access denied", 403, false));
   }
 
@@ -251,6 +259,7 @@ module.exports.createBill = asyncHandler(async (req, res, next) => {
   }
 
   const bill = new Bill({ ...req.body, createdBy: req.user._id });
+  bill.createdBy = req.user._id;
   bill.receiptNo = receiptNoGenerator(req.body.state);
   let time = new Date(req.body.taxFromDate || Date.now());
   time.setSeconds(new Date().getSeconds());
@@ -298,6 +307,7 @@ module.exports.createBill = asyncHandler(async (req, res, next) => {
   );
   // generate pdf url
   const pdfUrl = `${process.env.APP_BASE_URL}/bill/${bill._id}/pdf`;
+  const pageUrl = `${process.env.APP_BASE_URL}/bill/${bill._id}/page`;
   // send message to number
   //TODO:
   // return response
@@ -306,6 +316,7 @@ module.exports.createBill = asyncHandler(async (req, res, next) => {
     code: 201,
     bill,
     pdfUrl,
+    pageUrl,
   });
 });
 
