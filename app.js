@@ -3,7 +3,6 @@ const dotenv = require("dotenv");
 const app = express();
 const morgan = require("morgan");
 const helmet = require("helmet");
-const cors = require("cors");
 const xssClean = require("xss-clean");
 const hpp = require("hpp");
 const path = require("path");
@@ -20,6 +19,20 @@ dotenv.config({
     process.env.NODE_ENV || "local"
   )}.env`,
 });
+
+const cors = require("cors");
+
+app.use(cors({
+origin: [
+"https://demo-bill-frontend.onrender.com",
+"http://localhost:3000"
+],
+credentials: true,
+methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+allowedHeaders: ["Content-Type", "x-auth-token"]
+}));
+
+app.options("*", cors());
 
 // Routes Imports
 const authRoute = require("./routes/auth");
@@ -38,55 +51,6 @@ app.use(express.static(path.join(__dirname, "public/"), { index: false }));
 app.use(pdf);
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "ejs");
-
-// =============================================
-// ✅ CORS CONFIG (LOCAL + RENDER FRONTEND)
-// =============================================
-
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
-
-// Manual CORS headers so we fully control the response
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (origin && allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
-  }
-
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, x-auth-token, Authorization"
-  );
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-  );
-  res.header("Access-Control-Allow-Credentials", "true");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
-
-// Also keep cors() for safety
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, origin || false);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  })
-);
 
 // =============================================
 // SECURITY MIDDLEWARES
