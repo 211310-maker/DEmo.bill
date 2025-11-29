@@ -13,6 +13,7 @@ const {
   getPageAccessLink,
   getAccess,
   verifyOtp,
+  getStateList,
 } = require("../controller/auth");
 
 const { protect, adminOnly } = require("../middleware/auth");
@@ -31,6 +32,11 @@ router.get("/admin/get-users", protect, adminOnly, getAllUsers);
 //@route   GET /auth/admin/page-access-link
 //@access  Private - admin
 router.get("/admin/page-access-link", protect, adminOnly, getPageAccessLink);
+
+//@desc    get state list
+//@route   GET /auth/admin/state-list
+//@access  Private - admin
+router.get("/admin/state-list", protect, adminOnly, getStateList);
 
 //@desc    get access for registration
 //@route   GET /auth/get-access/:token
