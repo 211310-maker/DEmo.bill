@@ -1,5 +1,6 @@
 const User = require("../model/User");
 const TempUser = require("../model/TempUser");
+const TempAccess = require("../model/TempAccess");
 const _ = require("lodash");
 const asyncHandler = require("../middleware/asyncHandler");
 const bcrypt = require("bcryptjs");
@@ -7,7 +8,9 @@ const jwt = require("jsonwebtoken");
 const { validateLogin } = require("../utils/validation");
 const ErrorResponse = require("../utils/errorResponse");
 const logger = require("../logger");
-const { randomNumber } = require("../utils/helper");
+const { generateOtp, hashOtp, compareOtp } = require("../utils/otp");
+const { v4: uuidv4 } = require("uuid");
+const { sendSms } = require("../utils/sms");
 
 const ALL_STATES = [
   "BIHAR",
@@ -37,16 +40,24 @@ const ALL_STATES = [
 // GET PAGE ACCESS LINK
 // =============================================
 module.exports.getPageAccessLink = asyncHandler(async (req, res, next) => {
-  let user = new TempUser({ isBlocked: true });
-  await user.save();
+  const token = uuidv4();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  const token = jwt.sign({ id: user._id }, "page-access", { expiresIn: "1d" });
+  await TempAccess.create({
+    token,
+    expiresAt,
+    createdBy: req.user?._id,
+  });
+
+  const link = process.env.APP_BASE_URL
+    ? `${process.env.APP_BASE_URL}/app/register/${token}/get-access`
+    : `/app/register/${token}/get-access`;
 
   res.status(200).send({
     success: true,
-    code: 200,
-    url: `/app/register/${token}/get-access`,
-    tempUser: user,
+    link,
+    token,
+    expiresAt,
   });
 });
 
@@ -55,45 +66,39 @@ module.exports.getPageAccessLink = asyncHandler(async (req, res, next) => {
 // =============================================
 module.exports.getAccess = asyncHandler(async (req, res, next) => {
   const { token } = req.params;
-  let decoded;
+  const tempAccess = await TempAccess.findOne({ token });
 
-  try {
-    decoded = jwt.verify(token, "page-access");
-
-    if (decoded.exp < (new Date().getTime() + 1) / 1000) {
-      return res.status(400).send({
-        success: false,
-        code: 400,
-        message: "link expired",
-      });
-    }
-  } catch (error) {
-    return next(new ErrorResponse("Invalid or expired link", 400, false));
-  }
-
-  let user = await TempUser.findById(decoded.id);
-  if (!user) {
+  if (!tempAccess) {
     return next(new ErrorResponse("Invalid link", 400, false));
   }
-  let otp = randomNumber(6);
-  user.otp = otp;
-  user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
-  user.otpUsed = false;
-  await user.save();
 
-  const pageAccessToken = jwt.sign(
-    { id: decoded.id },
-    "valid-page-access-token",
-    { expiresIn: "15m" }
-  );
+  if (tempAccess.used) {
+    return next(new ErrorResponse("Link already used", 400, false));
+  }
+
+  if (tempAccess.expiresAt && tempAccess.expiresAt < new Date()) {
+    return next(new ErrorResponse("Link expired", 400, false));
+  }
+
+  const otp = generateOtp();
+  tempAccess.otpHash = await hashOtp(otp);
+  if (req.query?.mobileNo || req.body?.mobileNo) {
+    tempAccess.mobileNo = req.query.mobileNo || req.body.mobileNo;
+  }
+  if (req.query?.email || req.body?.email) {
+    tempAccess.email = req.query.email || req.body.email;
+  }
+  await tempAccess.save();
+
+  if (tempAccess.mobileNo) {
+    await sendSms(tempAccess.mobileNo, `${otp} is your verification code.`);
+  }
 
   res.status(200).send({
     success: true,
-    code: 200,
-    pageAccessToken,
-    otp,
-    tempUserId: user._id,
-    message: "Share this OTP with admin to complete user creation.",
+    token,
+    otpSent: true,
+    devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
   });
 });
 
@@ -145,75 +150,77 @@ module.exports.createUserWithOtp = asyncHandler(async (req, res, next) => {
 });
 
 // =============================================
-// VERIFY OTP
+// VERIFY OTP AND CREATE USER (PUBLIC VIA TOKEN)
 // =============================================
 module.exports.verifyOtp = asyncHandler(async (req, res, next) => {
-  const {
-    otp,
-    password,
-    username,
-    tempUserId,
-    accessState,
-    pageAccessToken,
-  } = req.body;
+  const { token, otp, name, mobileNo, email, password } = req.body;
+  let { role, accessState } = req.body;
 
-  if (!pageAccessToken) {
-    return next(new ErrorResponse("Page access token required", 400, false));
+  if (!token || !otp || !password) {
+    return next(new ErrorResponse("token, otp and password are required", 400));
   }
 
-  let decoded;
-  try {
-    decoded = jwt.verify(pageAccessToken, "valid-page-access-token");
-  } catch (error) {
-    return next(new ErrorResponse("Invalid or expired link", 400, false));
-  }
+  const tempAccess = await TempAccess.findOne({ token });
 
-  if (decoded.id !== tempUserId) {
+  if (!tempAccess) {
     return next(new ErrorResponse("Invalid link", 400, false));
   }
 
-  const tempUser = await TempUser.findOne({ _id: tempUserId, otp });
-  if (!tempUser) {
-    return next(
-      new ErrorResponse("Invalid Otp please start registering again", 400, false)
-    );
+  if (tempAccess.used) {
+    return next(new ErrorResponse("Link already used", 400, false));
   }
 
-  let user = await User.findOne({ username });
-  if (user) {
-    return next(new ErrorResponse("Username already exists", 400, false));
+  if (tempAccess.expiresAt && tempAccess.expiresAt < new Date()) {
+    return next(new ErrorResponse("Link expired", 400, false));
   }
 
-  user = new User({
+  const otpValid = await compareOtp(otp, tempAccess.otpHash || "");
+  if (!otpValid) {
+    return next(new ErrorResponse("Invalid OTP", 400, false));
+  }
+
+  const normalizedRole = role === "admin" ? "admin" : role || "user";
+  const finalMobileNo = mobileNo || tempAccess.mobileNo;
+  const finalEmail = email || tempAccess.email;
+  const username = finalMobileNo || finalEmail || name || token;
+  accessState = Array.isArray(accessState) ? accessState : [];
+
+  const user = new User({
     username,
+    name,
+    mobileNo: finalMobileNo,
+    email: finalEmail,
+    password,
+    role: normalizedRole,
     accessState,
     isBlocked: false,
     completed: true,
-    password,
+    createdBy: tempAccess.createdBy,
   });
 
-  const token = user.generateAuthToken();
   await user.save();
-  user.token = token;
-  await TempUser.findByIdAndDelete(tempUserId);
 
-  logger.info(`new user is created with id ${user._id}`);
+  tempAccess.used = true;
+  await tempAccess.save();
 
-  res.status(201).send({
+  const authToken = jwt.sign(
+    { _id: user._id },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE }
+  );
+
+  res.status(200).send({
     success: true,
-    status: 201,
-    message: "User created successfully!",
     user: _.pick(user, [
       "_id",
       "username",
       "role",
-      "isBlocked",
       "accessState",
-      "createdAt",
-      "updatedAt",
-      "token",
-      "__v",
+      "name",
+      "mobileNo",
+      "email",
     ]),
+    token: authToken,
   });
 });
 

@@ -43,10 +43,10 @@ app.set("view engine", "ejs");
 // ✅ CORS CONFIG (LOCAL + RENDER FRONTEND)
 // =============================================
 
-const allowedOrigins = [
-  "https://demo-bill-frontend.onrender.com", // Render frontend
-  "http://localhost:3000", // React dev
-];
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 // Manual CORS headers so we fully control the response
 app.use((req, res, next) => {
@@ -59,7 +59,7 @@ app.use((req, res, next) => {
 
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, x-auth-token"
+    "Origin, X-Requested-With, Content-Type, Accept, x-auth-token, Authorization"
   );
   res.header(
     "Access-Control-Allow-Methods",
@@ -77,8 +77,14 @@ app.use((req, res, next) => {
 // Also keep cors() for safety
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, origin || false);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
 );
 

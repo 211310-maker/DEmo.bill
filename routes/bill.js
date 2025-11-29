@@ -20,18 +20,18 @@ router.get('/get-details', protect, getDetails);
 
 //@desc    get Pdf
 //@route   GET /bill/:id/pdf
-//@access  private
-router.get('/:id/pdf', protect, getBillInPdfFormat);
+//@access  public
+router.get('/:id/pdf', getBillInPdfFormat);
 
 //@desc    get bill details on page
 //@route   GET /bill/:id/page
-//@access  private
-router.get('/:id/page', protect, getBillOnPageFormat);
+//@access  public
+router.get('/:id/page', getBillOnPageFormat);
 
 //@desc    verify bill
 //@route   GET /bill/verify/:id
-//@access  private
-router.get('/verify/:id', protect, verifyBill);
+//@access  public
+router.get('/verify/:id', verifyBill);
 
 // get all with filter
 

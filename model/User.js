@@ -8,9 +8,12 @@ const UserSchema = new mongoose.Schema(
       minlength: [2, 'Username minlength should be 2'],
       unique: true,
     },
+    name: { type: String },
+    mobileNo: { type: String },
+    email: { type: String },
     role: {
       type: String,
-      enum: ['member', 'admin'],
+      enum: ['member', 'admin', 'user'],
       default: 'member',
     },
     password: {
@@ -19,7 +22,7 @@ const UserSchema = new mongoose.Schema(
     },
     accessState: {
       type: [String],
-      default: null,
+      default: [],
     },
     isBlocked: {
       type: Boolean,
@@ -29,6 +32,7 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
